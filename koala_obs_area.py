@@ -6,7 +6,9 @@ import warnings
 warnings.simplefilter("ignore", RuntimeWarning)
 
 import fiona
+from fiona.crs import from_epsg
 import pandas
+from pyproj import Proj, transform
 import xarray
 
 import datacube
@@ -73,6 +75,9 @@ if __name__ == '__main__':
     errshp = 'koala_err_%s.shp'%year  #In case there's a dodgy point or two
     outcsv = 'koala_data_%s.csv'%year #Output csv
 
+    resolution = 25
+    window = (4,4)
+
     sensors = [
         'ls7',
         'ls5'
@@ -107,59 +112,64 @@ if __name__ == '__main__':
     last_oid = -1
     try:
         last_oid = get_last_oid(outcsv)
-    except (FileNotFoundError, TypeError):  # file doesn't exist, or exists but has no data
+    except (FileNotFoundError,TypeError):  # file doesn't exist, or exists but has no data
         with open(outcsv, 'w') as out:
             out.write('time,latitude,longitude,NDVI,SAVI,OID' + '\n')
 
     with fiona.open(inshp, 'r') as source, open(outcsv, 'a') as out:
 
-        recs = filter(lambda r:
-                      int(r['properties']['DYEAR']) == int(year) and
-                      int(r['properties']['OBJECTID']) > last_oid,
+        recs = filter(lambda r:  
+                      int(r['properties']['DYEAR']) == int(year) and int(r['properties']['OBJECTID']) > last_oid, 
                       source)
 
         driver = source.driver
         crs = source.crs
         schema = source.schema.copy()
-        schema['properties']['ORIGID'] = schema['properties']['OBJECTID']
+        schema['properties']['ORIGID']=schema['properties']['OBJECTID']
 
-        mode = 'a' if os.path.exists(errshp) else 'w'
-        with fiona.open(errshp, mode,
+        from_srs = Proj(crs)
+        to_srs = Proj(init='EPSG:3577')
+        
+        with fiona.open(errshp, 'a', 
                         driver=driver,
                         crs=crs,
                         schema=schema) as err:
+            
 
-            for i, rec in enumerate(recs):
+            for i,rec in enumerate(recs):
 
-                x, y = rec['geometry']['coordinates']
+                x,y = transform(from_srs, to_srs, *rec['geometry']['coordinates'])
+
                 oid = rec['properties']['OBJECTID']
                 rec['properties']['ORIGID'] = oid
 
                 print('%s\t%s\t%s'%(year, i, oid))
 
                 query['time'] = ('%s-01-01'%year, '%s-12-31'%year)
-                query['lon'] = (x-0.00025,x+0.00025)
-                query['lat'] = (y-0.00025,y+0.00025)
+                query['crs'] = 'EPSG:3577'
+                query['x'] = (x-resolution*(window[0]-1)/2, x+resolution*(window[0]-1)/2)
+                query['y'] = (y-resolution*(window[1]-1)/2, y+resolution*(window[1]-1)/2)
 
                 try:
                     nbar, fc = get_data(query, mask_components, pnbars, pfcs, pqas)
-                    px,py=(int(xy) for xy in ~nbar.affine * (x,y))
-
-                    nbar = nbar.isel(longitude=px,latitude=px).dropna('time', how = 'any')
-                    fc = fc.isel(longitude=px,latitude=px).dropna('time', how = 'any')
-
                     red, nir, lfac = nbar.red/10000, nbar.nir/10000, fc.BS/100
+
+                    nbar = nbar.dropna('time', how = 'any')
+                    fc = fc.dropna('time', how = 'any')
+
                     ndvi = ((nir-red)/(nir+red))
                     savi = ((nir-red)/(nir+red+lfac))*(1+lfac)
+                    ndvi = ndvi.median(dim=('y', 'x')).to_dataset(name='NDVI')
+                    savi = savi.median(dim=('y', 'x')).to_dataset(name='SAVI')
 
-                    ndvids=ndvi.to_dataset(name='NDVI')
-                    savids=savi.to_dataset(name='SAVI')
-                    ds = xarray.merge([ndvids,savids])
+                    ds = xarray.merge([ndvi, savi])
+
                     ds['OID'] = oid
                     
                     df=ds.to_dataframe()
                     df.to_csv(out, index=True, header=False)
                     out.flush()
+                    os.fsync(out.fileno())
                     
                 except (NoDataError, ValueError):
                     print('No data for rec {} ({},{})'.format(oid,x,y))
