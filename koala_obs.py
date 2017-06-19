@@ -107,35 +107,35 @@ if __name__ == '__main__':
     last_oid = -1
     try:
         last_oid = get_last_oid(outcsv)
-    except (FileNotFoundError, TypeError):  # file doesn't exist, or exists but has no data
+    except (FileNotFoundError,TypeError):  # file doesn't exist, or exists but has no data
         with open(outcsv, 'w') as out:
             out.write('time,latitude,longitude,NDVI,SAVI,OID' + '\n')
 
     with fiona.open(inshp, 'r') as source, open(outcsv, 'a') as out:
 
-        recs = filter(lambda r:
-                      int(r['properties']['DYEAR']) == int(year) and
-                      int(r['properties']['OBJECTID']) > last_oid,
+        recs = filter(lambda r:  
+                      int(r['properties']['DYEAR']) == int(year) and int(r['properties']['OBJECTID']) > last_oid, 
                       source)
 
         driver = source.driver
         crs = source.crs
         schema = source.schema.copy()
-        schema['properties']['ORIGID'] = schema['properties']['OBJECTID']
+        schema['properties']['ORIGID']=schema['properties']['OBJECTID']
 
+        
         mode = 'a' if os.path.exists(errshp) else 'w'
         with fiona.open(errshp, mode,
                         driver=driver,
                         crs=crs,
                         schema=schema) as err:
 
-            for i, rec in enumerate(recs):
+            for i,rec in enumerate(recs):
 
-                x, y = rec['geometry']['coordinates']
+                x,y = rec['geometry']['coordinates']
                 oid = rec['properties']['OBJECTID']
                 rec['properties']['ORIGID'] = oid
 
-                print('%s\t%s\t%s'%(year, i, oid))
+                print('%s\t%s\t%s'%(year,i,oid))
 
                 query['time'] = ('%s-01-01'%year, '%s-12-31'%year)
                 query['lon'] = (x-0.00025,x+0.00025)
@@ -160,6 +160,7 @@ if __name__ == '__main__':
                     df=ds.to_dataframe()
                     df.to_csv(out, index=True, header=False)
                     out.flush()
+                    os.fsync(out.fileno())
                     
                 except (NoDataError, ValueError):
                     print('No data for rec {} ({},{})'.format(oid,x,y))
