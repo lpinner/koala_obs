@@ -145,8 +145,8 @@ if __name__ == '__main__':
                     nbar, fc = get_data(query, mask_components, pnbars, pfcs, pqas)
                     px,py=(int(xy) for xy in ~nbar.affine * (x,y))
 
-                    nbar = nbar.isel(longitude=px,latitude=px).dropna('time', how = 'any')
-                    fc = fc.isel(longitude=px,latitude=px).dropna('time', how = 'any')
+                    nbar = nbar.isel(longitude=px,latitude=py).dropna('time', how = 'any')
+                    fc = fc.isel(longitude=px,latitude=py).dropna('time', how = 'any')
 
                     red, nir, lfac = nbar.red/10000, nbar.nir/10000, fc.BS/100
                     ndvi = ((nir-red)/(nir+red))
