@@ -111,8 +111,6 @@ if __name__ == '__main__':
         last_oid = get_last_oid(outcsv)
     except (FileNotFoundError,TypeError):  # file doesn't exist, or exists but has no data
         with open(outcsv, 'w') as out:
-            #out.write('time,NDVI_MEAN,NDVI_MEDIAN,SAVI_MEAN,SAVI_MEDIAN,OID,YEAR,longitude,latitude' + '\n')
-            #out.write('time,RED,NIR,BS,NDVI,SAVI,OID,YEAR,longitude,latitude' + '\n')
             out.write('time,NDVI,SAVI,OID,YEAR,longitude,latitude' + '\n')
 
     with fiona.open(inshp, 'r') as source, open(outcsv, 'a') as out:
@@ -152,7 +150,7 @@ if __name__ == '__main__':
                 try:
                     nbar, fc = get_data(query, mask_components, pnbars, pfcs, pqas, pnbar_measurements, pfc_measurements)
 
-                    #Getting some unmasked "-999" (NBAR) and "-1" FC invalid values coming through
+                    #Getting some unmasked "-999" (NBAR) and "-1" (FC) invalid values coming through
                     nbar = nbar.where((nbar.red >= 0) & (nbar.nir >= 0) & (fc.BS >= 0)).dropna('time', how = 'any')
                     fc = fc.where((nbar.red >= 0) & (nbar.nir >= 0) & (fc.BS >= 0)).dropna('time', how = 'any')
 
@@ -161,22 +159,14 @@ if __name__ == '__main__':
                     ndvi = ((nir-red)/(nir+red))
                     savi = ((nir-red)/(nir+red+lfac))*(1+lfac)
 
+                    #Filter out any  neg. vals
                     ndvi = ndvi.where(ndvi >= 0)
                     savi = savi.where(savi >= 0)
                     
-                    #ndvimean = ndvi.mean(dim=('y', 'x')).to_dataset(name='NDVI_MEAN')
-                    #ndvimedian = ndvi.median(dim=('y', 'x')).to_dataset(name='NDVI_MEDIAN')
-                    #savimean = savi.mean(dim=('y', 'x')).to_dataset(name='SAVI_MEAN')
-                    #savimedian = savi.median(dim=('y', 'x')).to_dataset(name='SAVI_MEDIAN')
-                    #ds = xarray.merge([ndvimean, ndvimedian,savimean,savimedian])
-
-                    #red = red.median(dim=('y', 'x')).to_dataset(name='RED')
-                    #nir = nir.median(dim=('y', 'x')).to_dataset(name='NIR')
-                    #lfac = lfac.median(dim=('y', 'x')).to_dataset(name='BS')
+                    #Take the median of the 4 pixels
                     ndvi = ndvi.median(dim=('y', 'x')).to_dataset(name='NDVI')
                     savi = savi.median(dim=('y', 'x')).to_dataset(name='SAVI')
 
-                    #ds = xarray.merge([red, nir,lfac, ndvi, savi])
                     ds = xarray.merge([ndvi, savi])
 
                     ds['OID'] = oid
